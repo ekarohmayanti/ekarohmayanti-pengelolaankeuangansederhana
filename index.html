@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MPI APBD - Pengelolaan Keuangan Sederhana</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+body{font-family:'Trebuchet MS','Segoe UI',system-ui,sans-serif;background:linear-gradient(150deg,#2e1065,#6d28d9 55%,#a855f7);min-height:100vh;color:#2e1065}
+.card{background:#fff;border-radius:1.25rem;padding:1.25rem;box-shadow:0 10px 30px #0004}
+.btn{background:#7c3aed;color:#fff;font-weight:700;border-radius:.9rem;padding:.65rem 1.1rem;transition:.15s;box-shadow:0 4px 0 #4c1d95;cursor:pointer}
+.btn:hover{background:#9333ea;transform:translateY(-2px)}
+.btn:active{transform:translateY(2px);box-shadow:0 1px 0 #4c1d95}
+.btn2{background:#ede9fe;color:#4c1d95;box-shadow:0 4px 0 #c4b5fd}
+.btn2:hover{background:#ddd6fe}
+.btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+.btn.ok{background:#16a34a;color:#fff;box-shadow:0 4px 0 #166534}
+.btn.no{background:#dc2626;color:#fff;box-shadow:0 4px 0 #991b1b}
+.btn.sel{background:#7c3aed;color:#fff}
+.pop{animation:pop .7s backwards}
+@keyframes pop{from{opacity:0;transform:translateY(40px) scale(.85)}}
+.float{animation:fl 3s ease-in-out infinite}
+@keyframes fl{50%{transform:translateY(-14px)}}
+input[type=text],input[type=number]{color:#000;background:#fff;caret-color:#000}
+input::placeholder{color:#6b7280}
+details{background:#f5f3ff;border-radius:.8rem;padding:.7rem 1rem;margin:.5rem 0}
+summary{cursor:pointer;font-weight:700}
+@media(prefers-reduced-motion:reduce){.pop,.float{animation:none}}
+@media print{body *{visibility:hidden}body{background:#fff}#cert,#cert *{visibility:visible}#cert{position:absolute;left:0;top:0;width:100%}}
+</style>
+</head>
+<body>
+<button id="home" class="btn fixed top-3 left-3 z-50 hidden" onclick="go('menu')">🏠 HOME</button>
+<div id="app"></div>
+
+<script>
+/* ===== KONFIGURASI NILAI ===== */
+// Isi dengan URL endpoint (mis. Google Apps Script / webhook) yang menulis ke lembar data Anda.
+const SHEET_URL = '';
+
+const $ = s => document.querySelector(s), app = $('#app');
+const shuf = a => [...a].sort(() => Math.random() - .5);
+const S = {name: '', kelas: ''};
+let REC = []; try { REC = JSON.parse(localStorage.getItem('mpi') || '[]') } catch (e) {}
+
+/* ===== AUDIO (disintesis, tanpa file eksternal) ===== */
+let AC, mg, vol = .5, musicOn = true, timer, step = 0;
+function initA() { if (AC) return; AC = new (window.AudioContext || window.webkitAudioContext)(); mg = AC.createGain(); mg.gain.value = vol; mg.connect(AC.destination) }
+function tone(f, t, d, type = 'sine', g = .2) {
+  if (!AC) return; const o = AC.createOscillator(), e = AC.createGain();
+  o.type = type; o.frequency.value = f; e.gain.setValueAtTime(g, t); e.gain.exponentialRampToValueAtTime(.001, t + d);
+  o.connect(e); e.connect(mg); o.start(t); o.stop(t + d + .02)
+}
+const mel = [523, 659, 784, 659, 587, 698, 880, 698, 659, 784, 988, 784, 523, 659, 784, 1047], bass = [131, 175, 196, 131];
+function music() {
+  clearInterval(timer); if (!musicOn || !AC) return;
+  timer = setInterval(() => { const t = AC.currentTime; tone(mel[step % 16], t, .25, 'triangle', .09); if (step % 4 == 0) tone(bass[(step / 4) % 4], t, .9, 'sine', .14); step++ }, 280)
+}
+const sfxOk = () => [523, 659, 784].forEach((f, i) => tone(f, AC.currentTime + i * .08, .18, 'triangle', .22));
+const sfxNo = () => { tone(220, AC.currentTime, .25, 'sawtooth', .12); tone(165, AC.currentTime + .12, .3, 'sawtooth', .12) };
+document.addEventListener('click', e => { if (AC && e.target.closest('button')) tone(700, AC.currentTime, .08, 'square', .1) });
+function tgl() { musicOn = !musicOn; music(); $('#mt').textContent = '🎵 Musik: ' + (musicOn ? 'ON' : 'OFF') }
+function setV(v) { vol = v / 100; if (mg) mg.gain.value = vol }
+
+/* ===== NAVIGASI ===== */
+const W = h => `<div class="max-w-3xl mx-auto p-4 pt-16">${h}</div>`;
+function go(n, a) {
+  $('#home').classList.toggle('hidden', n == 'splash');
+  screens[n](a); window.scrollTo(0, 0);
+  if (n != 'splash') app.insertAdjacentHTML('beforeend', '<p class="text-center text-purple-200 text-sm pb-6">Pengembang: Eka Rohmayanti, S.Pd. &nbsp;|&nbsp; Tahun 2026</p>');
+}
+function start() {
+  const n = $('#sn').value.trim(), k = $('#sk').value.trim();
+  if (!n || !k) { $('#serr').textContent = 'Isi nama siswa dan kelas dulu ya.'; return }
+  S.name = n; S.kelas = k; initA(); AC.resume(); music(); go('menu')
+}
+
+/* ===== MATERI ===== */
+const MAT = [
+ ['Pengertian', `<p>APBD (Anggaran Pendapatan dan Belanja Daerah) adalah rencana keuangan tahunan pemerintah daerah yang dibahas dan disetujui bersama oleh kepala daerah dan DPRD, lalu ditetapkan dengan Peraturan Daerah.</p>
+ <details><summary>📅 Kapan APBD berlaku?</summary>Satu tahun anggaran, dari 1 Januari sampai 31 Desember.</details>
+ <details><summary>🎯 Apa fungsinya?</summary>Otorisasi, perencanaan, pengawasan, alokasi, distribusi, dan stabilisasi.</details>
+ <details><summary>🏛️ Siapa yang menetapkan?</summary>Kepala daerah bersama DPRD melalui Peraturan Daerah (Perda).</details>`],
+ ['Struktur', `<p>APBD terdiri atas tiga bagian utama. Klik untuk membuka:</p>
+ <details><summary>💵 1. Pendapatan Daerah</summary>Semua penerimaan daerah yang menambah kekayaan bersih.</details>
+ <details><summary>🧾 2. Belanja Daerah</summary>Semua pengeluaran daerah untuk menjalankan pemerintahan dan pembangunan.</details>
+ <details><summary>🏦 3. Pembiayaan Daerah</summary>Penerimaan atau pengeluaran yang dipakai menutup defisit atau memanfaatkan surplus.</details>`],
+ ['Pendapatan', `<details open><summary>Pendapatan Asli Daerah (PAD)</summary>Pajak daerah, retribusi daerah, hasil pengelolaan kekayaan daerah yang dipisahkan, dan lain-lain PAD yang sah.</details>
+ <details><summary>Pendapatan Transfer</summary>Dana dari pemerintah pusat (DBH, DAU, DAK, dana insentif) dan transfer antar daerah.</details>
+ <details><summary>Lain-lain Pendapatan Daerah yang Sah</summary>Contoh: hibah dan dana darurat.</details>`],
+ ['Belanja', `<details open><summary>Belanja Operasi</summary>Belanja pegawai, barang dan jasa, bunga, subsidi, hibah, dan bantuan sosial.</details>
+ <details><summary>Belanja Modal</summary>Pembelian atau pembangunan aset tetap: tanah, peralatan dan mesin, gedung, jalan, irigasi, dan jaringan.</details>
+ <details><summary>Belanja Tidak Terduga</summary>Untuk keadaan darurat yang tidak bisa diprediksi, misalnya bencana alam.</details>
+ <details><summary>Belanja Transfer</summary>Transfer dana dari provinsi/kabupaten/kota kepada pemerintah desa atau daerah lain.</details>`],
+ ['Pembiayaan', `<details open><summary>Penerimaan Pembiayaan</summary>SiLPA tahun sebelumnya, pencairan dana cadangan, hasil penjualan kekayaan daerah yang dipisahkan, dan penerimaan pinjaman.</details>
+ <details><summary>Pengeluaran Pembiayaan</summary>Pembentukan dana cadangan, penyertaan modal daerah, dan pembayaran pokok utang.</details>`],
+ ['Rumus', `<div class="bg-purple-100 rounded-xl p-3 font-bold space-y-1"><p>Surplus/Defisit = Pendapatan − Belanja</p><p>Pembiayaan Netto = Penerimaan − Pengeluaran Pembiayaan</p><p>SiLPA = Surplus/Defisit + Pembiayaan Netto</p></div>
+ <details><summary>🧮 Contoh soal (klik untuk lihat jawaban)</summary>Pendapatan Rp2.000 juta, Belanja Rp2.250 juta, Pembiayaan Netto Rp300 juta.<br>Defisit = 2.000 − 2.250 = −250 juta.<br>SiLPA = −250 + 300 = <b>Rp50 juta</b>.</details>`]
+];
+function tab(i) {
+  document.querySelectorAll('.tb').forEach((b, k) => b.classList.toggle('sel', k == i));
+  $('#mc').innerHTML = `<h3 class="text-2xl font-black mb-2">${MAT[i][0]}</h3><div class="leading-relaxed">${MAT[i][1]}</div>`
+}
+
+/* ===== DATA KUIS ===== */
+const GN = ['🧠 Tebak Cepat', '⚖️ Benar atau Salah', '🗂️ Kelompokkan', '🧮 Hitung Cerdas'];
+const GD = ['Pilihan ganda seputar APBD', 'Tentukan pernyataan benar/salah', 'Masukkan pos ke kelompok yang tepat', 'Hitung dalam juta rupiah'];
+const CAT = ['Pendapatan', 'Belanja', 'Pembiayaan'];
+const D = [
+ [[['APBD ditetapkan setiap tahun dengan…', ['Peraturan Daerah', 'Keputusan Presiden', 'Surat Edaran', 'Undang-Undang']], ['Tahun anggaran APBD dimulai pada…', ['1 Januari', '1 April', '1 Juli', '17 Agustus']], ['Tiga struktur utama APBD adalah…', ['Pendapatan, Belanja, Pembiayaan', 'Pajak, Zakat, Hibah', 'Aset, Utang, Modal', 'Gaji, Barang, Modal']]],
+  [['Pajak daerah termasuk kelompok…', ['Pendapatan Asli Daerah', 'Belanja Modal', 'Pembiayaan', 'Belanja Operasi']], ['Dana Alokasi Umum (DAU) termasuk…', ['Pendapatan Transfer', 'PAD', 'Belanja Pegawai', 'Pengeluaran Pembiayaan']], ['Pembelian gedung sekolah baru termasuk…', ['Belanja Modal', 'Belanja Pegawai', 'Pendapatan Transfer', 'PAD']]],
+  [['Pendapatan Rp900 juta, Belanja Rp1 miliar. APBD mengalami…', ['Defisit Rp100 juta', 'Surplus Rp100 juta', 'Seimbang', 'Surplus Rp1,9 miliar']], ['Defisit anggaran umumnya ditutup dengan…', ['Penerimaan pembiayaan', 'Menambah belanja', 'Mengurangi pendapatan', 'Pengeluaran pembiayaan']], ['Pembayaran pokok utang daerah masuk…', ['Pengeluaran pembiayaan', 'Belanja operasi', 'PAD', 'Pendapatan transfer']]]],
+ [[['APBD disetujui bersama oleh kepala daerah dan DPRD.', 1], ['APBD berlaku selama 5 tahun.', 0], ['Retribusi daerah termasuk Pendapatan Asli Daerah.', 1]],
+  [['Belanja pegawai termasuk Belanja Modal.', 0], ['Hibah dapat menjadi pendapatan daerah.', 1], ['SiLPA termasuk penerimaan pembiayaan.', 1]],
+  [['Surplus terjadi jika belanja lebih besar daripada pendapatan.', 0], ['Penyertaan modal daerah masuk pengeluaran pembiayaan.', 1], ['Pembiayaan netto = penerimaan − pengeluaran pembiayaan.', 1]]],
+ [[['Pajak hotel', 0], ['Gaji pegawai daerah', 1], ['Pinjaman daerah', 2]],
+  [['Dana Alokasi Khusus (DAK)', 0], ['Pembelian peralatan dan mesin', 1], ['SiLPA tahun lalu', 2]],
+  [['Hasil pengelolaan kekayaan daerah yang dipisahkan', 0], ['Bunga pinjaman daerah', 1], ['Pembayaran pokok utang', 2]]],
+ [[['PAD Rp300 juta + Transfer Rp700 juta. Total pendapatan?', 1000], ['Belanja Operasi 600 + Belanja Modal 250. Total belanja?', 850], ['Pendapatan 500, belanja 400. Berapa surplusnya?', 100]],
+  [['Pendapatan 1.200, belanja 1.350. Berapa defisitnya? (tulis angka positif)', 150], ['PAD 450 + Transfer 900 + Lain-lain 50. Total pendapatan?', 1400], ['Penerimaan pembiayaan 200, pengeluaran 80. Pembiayaan netto?', 120]],
+  [['Pendapatan 2.000, belanja 2.250, pembiayaan netto 300. Berapa SiLPA?', 50], ['Belanja pegawai 800, barang/jasa 500, modal 700, tak terduga 100. Total belanja?', 2100], ['Pendapatan 3.500; belanja operasi 2.400; belanja modal 900; pembiayaan netto 200. Berapa SiLPA?', 400]]]
+];
+let U = [0, 0, 0, 0], g, lv, qi, qs, sc, locked;
+
+function play(gi, l) { g = gi; lv = l; qi = 0; sc = 0; qs = D[gi][l]; ask() }
+function ask() {
+  if (qi >= 3) return fin();
+  const q = qs[qi]; locked = false; let b;
+  if (g == 3) b = `<input id="in" type="number" step="any" inputmode="decimal" autocomplete="off" onkeydown="if(event.key=='Enter')ans4()" class="w-full border-2 border-purple-300 rounded-xl p-3 text-lg" placeholder="Jawaban (juta Rp)"><button class="btn mt-3" onclick="ans4()">Jawab</button>`;
+  else {
+    const o = g == 0 ? shuf(q[1]) : g == 1 ? ['Benar', 'Salah'] : CAT, c = g == 0 ? q[1][0] : g == 1 ? (q[1] ? 'Benar' : 'Salah') : CAT[q[1]];
+    b = `<div id="opts" data-c="${c}">` + o.map(x => `<button class="btn btn2 block w-full my-2 text-left" onclick="chk(this)">${x}</button>`).join('') + '</div>'
+  }
+  const t = g == 2 ? `Masuk kelompok apakah: <u>${q[0]}</u>?` : q[0];
+  app.innerHTML = W(`<div class="card pop"><div class="flex justify-between text-sm font-bold text-purple-700"><span>${GN[g]} · Level ${lv + 1}</span><span>Soal ${qi + 1}/3 · ⭐ ${sc}</span></div><p class="text-xl font-bold my-4">${t}</p>${b}<div id="fb" class="mt-3"></div></div>`)
+  if (g == 3) $('#in').focus()
+}
+function done(ok, c) {
+  if (locked) return; locked = true; sc += ok; ok ? sfxOk() : sfxNo();
+  $('#fb').innerHTML = `<p class="font-bold ${ok ? 'text-green-700' : 'text-red-700'}">${ok ? '✅ Benar! Hebat!' : '❌ Belum tepat. Jawaban: ' + c}</p><button class="btn mt-2" onclick="qi++;ask()">Lanjut ▶</button>`
+}
+function chk(b) {
+  if (locked) return; const o = $('#opts'), c = o.dataset.c, ok = b.textContent == c;
+  o.querySelectorAll('button').forEach(x => { if (x.textContent == c) x.classList.add('ok'); else if (x == b) x.classList.add('no') });
+  done(ok, c)
+}
+function ans4() { const v = parseFloat($('#in').value); if (isNaN(v) || locked) return; done(Math.abs(v - qs[qi][1]) < 1e-6, qs[qi][1]) }
+function fin() {
+  const pass = sc >= 2, last = lv == 2; if (pass && U[g] == lv && !last) U[g] = lv + 1;
+  pass ? sfxOk() : sfxNo();
+  app.innerHTML = W(`<div class="card text-center pop"><div class="text-6xl">${pass ? '🎉' : '💪'}</div><h2 class="text-2xl font-black mt-2">${GN[g]} · Level ${lv + 1}</h2><p class="text-4xl my-3">${'⭐'.repeat(sc)}${'☆'.repeat(3 - sc)}</p><p class="font-bold">Benar ${sc} dari 3. ${pass ? (last ? 'Semua level selesai!' : 'Level berikutnya terbuka!') : 'Butuh minimal 2 benar untuk lanjut.'}</p><div class="flex flex-wrap gap-3 justify-center mt-4">${pass && !last ? `<button class="btn" onclick="play(${g},${lv + 1})">Level ${lv + 2} ▶</button>` : ''}<button class="btn btn2" onclick="play(${g},${lv})">Ulangi</button><button class="btn btn2" onclick="go('kuis')">Menu Kuis</button></div></div>`)
+}
+
+/* ===== DATA SIMULASI (10 soal) ===== */
+const SIM = [
+ {t: 'd', s: 'Pajak dan retribusi daerah termasuk kelompok ___.', a: 'PAD', b: ['PAD', 'Belanja Modal', 'Pembiayaan']},
+ {t: 'm', s: 'Berikut yang BUKAN termasuk Pendapatan Asli Daerah adalah…', a: 'Dana Alokasi Umum', o: ['Dana Alokasi Umum', 'Pajak daerah', 'Retribusi daerah', 'Hasil kekayaan daerah yang dipisahkan']},
+ {t: 'k', s: 'Pembangunan jalan raya termasuk Belanja Pegawai.', a: 4},
+ {t: 'd', s: 'Gaji pegawai daerah termasuk Belanja ___.', a: 'Operasi', b: ['Operasi', 'Modal', 'Transfer']},
+ {t: 'm', s: 'Pendapatan Rp2 miliar dan belanja Rp1,7 miliar. Hasilnya…', a: 'Surplus Rp300 juta', o: ['Surplus Rp300 juta', 'Defisit Rp300 juta', 'Surplus Rp3,7 miliar', 'Seimbang']},
+ {t: 'k', s: 'SiLPA termasuk dalam pengeluaran pembiayaan daerah.', a: 3},
+ {t: 'd', s: 'Jika pendapatan lebih kecil daripada belanja maka terjadi ___.', a: 'Defisit', b: ['Surplus', 'Defisit', 'Seimbang']},
+ {t: 'm', s: 'Pembelian ambulans untuk puskesmas termasuk…', a: 'Belanja Modal', o: ['Belanja Modal', 'Belanja Pegawai', 'PAD', 'Penerimaan Pembiayaan']},
+ {t: 'k', s: 'Tahun anggaran APBD berlangsung dari 1 Januari sampai 31 Maret.', a: 7},
+ {t: 'm', s: 'Pihak yang menyetujui Raperda APBD bersama kepala daerah adalah…', a: 'DPRD', o: ['DPRD', 'BPK', 'KPK', 'DPD']}
+];
+let si, ss, ans;
+function simStart() {
+  si = 0; ss = 0; simQ()
+}
+function simQ() {
+  if (si >= SIM.length) return simEnd();
+  const q = SIM[si]; ans = null; let b = '', ins = '';
+  if (q.t == 'd') {
+    ins = 'Seret kata ke tempat kosong (atau ketuk kata).';
+    b = `<p class="text-xl font-semibold">${q.s.replace('___', '<span id="blank" ondragover="event.preventDefault()" ondrop="drop(event)" class="inline-block min-w-[8rem] border-b-4 border-purple-500 text-purple-700 text-center px-2 font-bold">……</span>')}</p><div class="flex flex-wrap gap-2 mt-4">${shuf(q.b).map(w => `<button draggable="true" ondragstart="event.dataTransfer.setData('text',this.dataset.w)" onclick="setW(this.dataset.w)" data-w="${w}" class="btn btn2">${w}</button>`).join('')}</div>`
+  } else if (q.t == 'm') {
+    ins = 'Pilih satu jawaban yang paling tepat.';
+    b = `<p class="text-xl font-semibold">${q.s}</p>` + shuf(q.o).map(x => `<button class="btn btn2 block w-full my-2 text-left ch" onclick="pickM(this)">${x}</button>`).join('')
+  } else {
+    ins = 'Ketuk SATU kata yang salah dalam kalimat.';
+    b = `<div class="flex flex-wrap gap-1">${q.s.split(' ').map((w, i) => `<button class="btn btn2 ch" onclick="pickK(this,${i})">${w}</button>`).join('')}</div>`
+  }
+  app.innerHTML = W(`<div class="card pop"><div class="flex justify-between text-sm font-bold text-purple-700"><span>Soal ${si + 1} dari 10</span><span>${['Drag the Word', 'Pilihan Ganda', 'Mark the Word'][['d', 'm', 'k'].indexOf(q.t)]}</span></div><div class="h-2 bg-purple-100 rounded-full my-2"><div class="h-2 bg-purple-600 rounded-full" style="width:${si * 10}%"></div></div><p class="text-sm text-purple-600 mb-3">${ins}</p>${b}<p id="err" class="text-red-600 text-sm mt-3"></p><button class="btn mt-2" onclick="simNext()">${si == 9 ? 'Selesai ✔' : 'Lanjut ▶'}</button></div>`)
+}
+function setW(w) { ans = w; $('#blank').textContent = w }
+function drop(e) { e.preventDefault(); setW(e.dataTransfer.getData('text')) }
+function pickM(b) { ans = b.textContent; document.querySelectorAll('.ch').forEach(x => x.classList.toggle('sel', x == b)) }
+function pickK(b, i) { ans = i; document.querySelectorAll('.ch').forEach(x => x.classList.toggle('sel', x == b)) }
+function simNext() {
+  if (ans === null) { $('#err').textContent = 'Pilih atau isi jawaban dulu.'; return }
+  if (ans === SIM[si].a) ss++; si++; simQ()
+}
+function simEnd() {
+  const nilai = ss * 10, pr = nilai >= 80 ? 'Sangat Baik' : nilai >= 60 ? 'Baik' : 'Perlu Berlatih Lagi';
+  const r = {nama: S.name, kelas: S.kelas, nilai, waktu: new Date().toLocaleString('id-ID')};
+  REC.push(r); try { localStorage.setItem('mpi', JSON.stringify(REC)) } catch (e) {}
+  if (SHEET_URL) fetch(SHEET_URL, {method: 'POST', mode: 'no-cors', headers: {'Content-Type': 'text/plain'}, body: JSON.stringify(r)}).catch(() => {});
+  sfxOk();
+  app.innerHTML = W(`<div id="cert" class="bg-white border-8 border-double border-purple-600 rounded-2xl p-6 text-center pop"><div class="text-6xl">🏆</div><h2 class="text-3xl font-black text-purple-800 mt-1">SERTIFIKAT PENCAPAIAN</h2><p class="mt-3">diberikan kepada</p><p class="text-4xl font-black text-purple-700 mt-2 break-words" id="cn"></p><p class="font-bold text-purple-700 mb-2">Kelas <span id="ck"></span></p><p>atas penyelesaian Simulasi <b>Struktur APBD</b><br>Pengelolaan Keuangan Sederhana · Kelas XI SMKS</p><p class="text-5xl font-black text-purple-800 my-3">${nilai}</p><p class="font-bold">Benar ${ss} dari 10 soal · Predikat: ${pr}</p><p class="text-sm mt-3">${r.waktu}</p><p class="text-sm mt-3 text-purple-700">Pengembang: Eka Rohmayanti, S.Pd. · Tahun 2026</p></div>
+  <p class="text-center text-purple-100 text-sm mt-3">${SHEET_URL ? 'Nilai dikirim ke lembar data.' : 'Nilai tersimpan di perangkat ini (URL lembar data belum diisi).'}</p>
+  <div class="flex flex-wrap gap-3 justify-center mt-4"><button class="btn" onclick="window.print()">🖨️ Cetak Sertifikat</button><button class="btn btn2" onclick="csv()">📄 Unduh Rekap CSV</button><button class="btn btn2" onclick="go('simulasi')">Ulangi</button></div>`);
+  $('#cn').textContent = S.name; $('#ck').textContent = S.kelas
+}
+function csv() {
+  const t = 'Nama,Kelas,Nilai,Waktu\n' + REC.map(r => `"${r.nama.replace(/"/g, '""')}","${(r.kelas || '').replace(/"/g, '""')}",${r.nilai},"${r.waktu}"`).join('\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([t], {type: 'text/csv'})); a.download = 'rekap_nilai_APBD.csv'; a.click()
+}
+
+/* ===== LAYAR ===== */
+const screens = {
+ splash() {
+  $('#home').classList.add('hidden');
+  app.innerHTML = `<div class="min-h-screen flex flex-col items-center justify-center text-center text-white p-6"><div class="text-7xl float pop">💰🏛️</div><h1 class="pop text-6xl md:text-8xl font-black mt-4 tracking-tight" style="animation-delay:.2s">APBD</h1><h2 class="pop text-xl md:text-3xl font-bold mt-2 max-w-xl" style="animation-delay:.4s">Struktur Anggaran Pendapatan dan Belanja Daerah</h2><p class="pop mt-2 text-purple-200" style="animation-delay:.6s">Pengelolaan Keuangan Sederhana · Kelas XI SMKS</p><div class="pop card w-full max-w-md mt-6 text-left" style="animation-delay:.8s"><label class="block font-bold" for="sn">Nama siswa</label><input id="sn" type="text" maxlength="40" autocomplete="off" class="w-full border-2 border-purple-300 rounded-xl p-3 text-lg mt-1 mb-3" placeholder="Ketik nama lengkap" value="${S.name.replace(/"/g, '&quot;')}"><label class="block font-bold" for="sk">Kelas</label><input id="sk" type="text" maxlength="20" autocomplete="off" class="w-full border-2 border-purple-300 rounded-xl p-3 text-lg mt-1" placeholder="Contoh: XI AKL 1" value="${S.kelas.replace(/"/g, '&quot;')}" onkeydown="if(event.key=='Enter')start()"><p id="serr" class="text-red-600 text-sm mt-2"></p></div><button class="btn pop text-2xl mt-6 px-12 py-4" style="animation-delay:1s" onclick="start()">▶ MULAI</button><p class="pop mt-10 text-purple-200 text-sm" style="animation-delay:1.2s">Pengembang: Eka Rohmayanti, S.Pd. · Tahun 2026</p></div>`
+ },
+ menu() {
+  app.innerHTML = W(`<h1 class="text-white text-3xl font-black text-center">Menu Utama</h1><div class="grid grid-cols-2 gap-4 mt-5 pop">${[['beranda', '🏡', 'BERANDA'], ['materi', '📚', 'MATERI'], ['simulasi', '📝', 'SIMULASI'], ['kuis', '🎮', 'KUIS']].map(m => `<button class="btn text-xl py-8" onclick="go('${m[0]}')"><span class="block text-4xl mb-1">${m[1]}</span>${m[2]}</button>`).join('')}</div>
+  <div class="card mt-5"><h3 class="font-black mb-2">⚙️ Pengaturan</h3><div class="flex items-center gap-4 flex-wrap"><button id="mt" class="btn btn2" onclick="tgl()">🎵 Musik: ${musicOn ? 'ON' : 'OFF'}</button><label class="font-semibold flex items-center gap-2">🔊 Volume <input type="range" min="0" max="100" value="${vol * 100}" oninput="setV(this.value)" class="accent-purple-600"></label></div></div>`)
+ },
+ beranda() {
+  app.innerHTML = W(`<div class="card pop"><h2 class="text-2xl font-black">Selamat datang! 👋</h2><p class="mt-2">Media pembelajaran ini membantumu memahami bagaimana pemerintah daerah merencanakan uang daerah dalam APBD.</p><h3 class="font-black mt-4">Tujuan Pembelajaran</h3><p>Siswa dapat mengidentifikasi dan menyelesaikan masalah yang berkaitan dengan Struktur Anggaran Pendapatan Daerah dan Belanja Daerah Negara.</p><h3 class="font-black mt-4">Cara belajar</h3><ol class="list-decimal ml-5 space-y-1"><li>Buka <b>MATERI</b> dan baca setiap tab.</li><li>Main <b>KUIS</b> untuk berlatih (4 game, 3 level).</li><li>Kerjakan <b>SIMULASI</b> 10 soal, lalu ambil sertifikatmu.</li></ol></div>`)
+ },
+ materi() {
+  app.innerHTML = W(`<div class="card pop"><div class="flex flex-wrap gap-2 mb-4">${MAT.map((m, i) => `<button class="btn btn2 tb" onclick="tab(${i})">${m[0]}</button>`).join('')}</div><div id="mc"></div></div>`); tab(0)
+ },
+ kuis() {
+  app.innerHTML = W(`<h1 class="text-white text-3xl font-black text-center mb-4">Pilih Game Kuis</h1><div class="grid sm:grid-cols-2 gap-4 pop">${GN.map((n, i) => `<div class="card"><h3 class="text-xl font-black">${n}</h3><p class="text-sm mb-3">${GD[i]}</p><div class="flex gap-2">${[0, 1, 2].map(l => `<button class="btn flex-1" ${l > U[i] ? 'disabled' : ''} onclick="play(${i},${l})">${l > U[i] ? '🔒' : 'Lv'} ${l + 1}</button>`).join('')}</div></div>`).join('')}</div>`)
+ },
+ simulasi() {
+  app.innerHTML = W(`<div class="card pop"><h2 class="text-2xl font-black">📝 Simulasi: 10 Soal</h2><p class="mt-1 text-sm">Terdiri dari Drag the Word, Pilihan Ganda, dan Mark the Word. Nilaimu akan tercatat dan sertifikat akan muncul di akhir.</p><div class="bg-purple-100 rounded-xl p-3 mt-4"><p>Nama: <b id="sim-n"></b></p><p>Kelas: <b id="sim-k"></b></p></div><button class="btn mt-3" onclick="simStart()">Mulai Simulasi ▶</button></div>`);
+  $('#sim-n').textContent = S.name; $('#sim-k').textContent = S.kelas
+ }
+};
+screens.splash();
+</script>
+</body>
+</html>
